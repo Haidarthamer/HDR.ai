@@ -18,6 +18,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -38,6 +40,10 @@ fun RealAuthScreen(
 
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
+    var manualFlowOpen by remember { mutableStateOf(false) }
+    var manualMode by remember { mutableStateOf("CHOICE") }
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
 
     // Automatic silent auto-sign in check on display
     LaunchedEffect(Unit) {
@@ -110,6 +116,135 @@ fun RealAuthScreen(
                         modifier = Modifier.padding(12.dp)
                     )
                 }
+            }
+
+            if (manualFlowOpen) {
+                Text(
+                    text = "Log in manually",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(bottom = 10.dp)
+                )
+
+                if (manualMode == "CHOICE") {
+                    Text(
+                        text = "Already have an account, or creating a new one?",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
+                        onClick = { manualMode = "LOGIN"; errorMessage = null },
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        enabled = !isLoading
+                    ) { Text("Log in") }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = { manualMode = "CREATE"; errorMessage = null },
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        enabled = !isLoading
+                    ) { Text("Create an account") }
+                } else {
+                    Text(
+                        text = if (manualMode == "LOGIN") "Log in to your account" else "Create your NexusAI account",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = email,
+                        onValueChange = { email = it },
+                        label = { Text("Email address") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isLoading
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text("Password (at least 6 characters)") },
+                        singleLine = true,
+                        visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isLoading
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Button(
+                        onClick = {
+                            errorMessage = null
+                            if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email.trim()).matches()) {
+                                errorMessage = "Enter a valid email address."
+                            } else if (password.length < 6) {
+                                errorMessage = "Password must be at least 6 characters."
+                            } else {
+                                isLoading = true
+                                val success = {
+                                    isLoading = false
+                                    onAuthSuccess()
+                                }
+                                val failure: (String) -> Unit = { err ->
+                                    isLoading = false
+                                    errorMessage = err
+                                }
+                                if (manualMode == "LOGIN") {
+                                    AuthenticationManager.signInWithEmailPassword(email, password, scope, success, failure)
+                                } else {
+                                    AuthenticationManager.createAccountWithEmailPassword(email, password, scope, success, failure)
+                                }
+                            }
+                        },
+                        enabled = !isLoading,
+                        modifier = Modifier.fillMaxWidth().height(48.dp)
+                    ) {
+                        if (isLoading) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        else Text(if (manualMode == "LOGIN") "Log in" else "Create account")
+                    }
+                    TextButton(
+                        onClick = {
+                            manualMode = if (manualMode == "LOGIN") "CREATE" else "LOGIN"
+                            errorMessage = null
+                        },
+                        enabled = !isLoading,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(if (manualMode == "LOGIN") "New here? Create an account" else "Already have an account? Log in")
+                    }
+                }
+                TextButton(
+                    onClick = {
+                        manualFlowOpen = false
+                        manualMode = "CHOICE"
+                        errorMessage = null
+                    },
+                    enabled = !isLoading,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Back to sign-in options") }
+
+                Spacer(modifier = Modifier.height(12.dp))
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
+            if (!manualFlowOpen) {
+                OutlinedButton(
+                    onClick = {
+                        manualFlowOpen = true
+                        manualMode = "CHOICE"
+                        errorMessage = null
+                    },
+                    enabled = !isLoading,
+                    shape = RoundedCornerShape(24.dp),
+                    modifier = Modifier.fillMaxWidth().height(52.dp).testTag("manual_signin_button")
+                ) {
+                    Icon(imageVector = Icons.Default.Email, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text("Log in manually", fontWeight = FontWeight.SemiBold)
+                }
+                Spacer(modifier = Modifier.height(14.dp))
             }
 
             // Real Google Sign-In Button via Jetpack CredentialManager

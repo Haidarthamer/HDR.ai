@@ -192,6 +192,82 @@ object AuthenticationManager {
         }
     }
 
+    /**
+     * Email/password authentication uses Firebase Auth so passwords are never stored locally
+     * by NexusAI. This requires a configured Firebase project with Email/Password enabled.
+     */
+    fun signInWithEmailPassword(
+        email: String,
+        password: String,
+        scope: CoroutineScope,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        val authInstance = auth
+        if (authInstance == null) {
+            onError("Account login is not configured yet. Firebase setup is required. You can continue as Guest for now.")
+            return
+        }
+        scope.launch {
+            try {
+                authInstance.signInWithEmailAndPassword(email.trim(), password).await()
+                _currentUserFlow.value = authInstance.currentUser
+                _isGuestMode.value = false
+                onSuccess()
+            } catch (e: Exception) {
+                Log.e(TAG, "Email/password sign-in failed", e)
+                onError(friendlyEmailAuthError(e, creatingAccount = false))
+            }
+        }
+    }
+
+    fun createAccountWithEmailPassword(
+        email: String,
+        password: String,
+        scope: CoroutineScope,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        val authInstance = auth
+        if (authInstance == null) {
+            onError("Account creation is not configured yet. Firebase setup is required. You can continue as Guest for now.")
+            return
+        }
+        scope.launch {
+            try {
+                authInstance.createUserWithEmailAndPassword(email.trim(), password).await()
+                _currentUserFlow.value = authInstance.currentUser
+                _isGuestMode.value = false
+                onSuccess()
+            } catch (e: Exception) {
+                Log.e(TAG, "Email/password account creation failed", e)
+                onError(friendlyEmailAuthError(e, creatingAccount = true))
+            }
+        }
+    }
+
+    private fun friendlyEmailAuthError(error: Exception, creatingAccount: Boolean): String {
+        val code = (error as? com.google.firebase.auth.FirebaseAuthException)?.errorCode.orEmpty().lowercase()
+        val message = error.localizedMessage.orEmpty().lowercase()
+        return when {
+            "email-already-in-use" in code || "email address is already in use" in message ->
+                "An account with this email already exists. Choose Log in instead."
+            "weak-password" in code || "password is invalid" in message ->
+                "Choose a stronger password with at least 6 characters."
+            "invalid-email" in code ->
+                "Enter a valid email address."
+            "user-not-found" in code || "wrong-password" in code || "invalid-credential" in code ->
+                "Email or password is incorrect. If you don't have an account, choose Create an account."
+            "network" in message ->
+                "Network error. Check your internet connection and try again."
+            else -> if (creatingAccount) {
+                "Couldn't create your account. Check Firebase Email/Password sign-in is enabled, then try again."
+            } else {
+                "Couldn't sign in. Check Firebase configuration and your account details, then try again."
+            }
+        }
+    }
+
     fun signOut(
         context: Context,
         credentialManager: CredentialManager,
