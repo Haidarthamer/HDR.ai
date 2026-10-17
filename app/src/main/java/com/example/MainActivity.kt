@@ -1,5 +1,6 @@
 package com.example
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -33,6 +34,14 @@ import com.example.viewmodel.ChatViewModel
 
 class MainActivity : ComponentActivity() {
     private val viewModel: ChatViewModel by viewModels()
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.getBooleanExtra(com.example.calls.CallScheduleController.EXTRA_OPEN_CALL, false)) {
+            viewModel.navigateTo(AppDestination.Call)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
