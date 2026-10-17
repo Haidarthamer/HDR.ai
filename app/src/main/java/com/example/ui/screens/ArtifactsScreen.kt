@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.sp
 import com.example.engine.DesignIntelligence
 import com.example.model.FirestoreArtifact
 import com.example.ui.components.InteractiveWebPreview
+import com.example.viewmodel.AppDestination
 import com.example.viewmodel.ChatViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -59,7 +60,7 @@ fun ArtifactsScreen(
                 title = {
                     Column {
                         Text(
-                            text = activeArtifact?.title ?: "Artifacts & Design Studio",
+                            text = activeArtifact?.title ?: "Nexus Canvas",
                             fontWeight = FontWeight.Bold,
                             fontSize = 17.sp,
                             maxLines = 1
@@ -67,7 +68,7 @@ fun ArtifactsScreen(
                         Text(
                             text = if (activeArtifact != null) {
                                 "${activeArtifact?.type?.uppercase()} · ${activeArtifact?.language?.uppercase()} · v${activeArtifact?.version ?: 1}"
-                            } else "NexusAI Interactive Prototypes & Visual Verification",
+                            } else "Build, run, and inspect interactive apps",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -142,16 +143,51 @@ fun ArtifactsScreen(
                             )
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(
-                                "No artifacts yet.",
+                                "Your Canvas is ready",
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                style = MaterialTheme.typography.titleMedium
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                "Ask NexusAI to build an interactive HTML game, dashboard, or UI prototype.",
+                                "Choose a starting point. NexusAI will generate the artifact, then you can run the interactive preview here.",
                                 fontSize = 13.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
                             )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Button(
+                                onClick = {
+                                    onBack()
+                                    viewModel.navigateTo(AppDestination.Chat)
+                                    viewModel.sendMessage("Build a polished, playable HTML5 mini-game with responsive mobile controls. Return the complete self-contained HTML artifact so I can run it in Nexus Canvas.")
+                                },
+                                modifier = Modifier.fillMaxWidth().testTag("canvas_template_game")
+                            ) {
+                                Icon(Icons.Default.SportsEsports, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Create a playable mini-game")
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    onBack()
+                                    viewModel.sendMessage("Build a polished, responsive interactive dashboard as a self-contained HTML artifact with realistic sample data, useful charts, filters, and a refined visual design.")
+                                },
+                                modifier = Modifier.fillMaxWidth().testTag("canvas_template_dashboard")
+                            ) {
+                                Icon(Icons.Default.Dashboard, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Create a dashboard")
+                            }
+                            OutlinedButton(
+                                onClick = {
+                                    onBack()
+                                    viewModel.sendMessage("Build a polished responsive web-app prototype as a self-contained HTML artifact. Include working navigation, interactive controls, thoughtful empty states, and a cohesive visual design.")
+                                },
+                                modifier = Modifier.fillMaxWidth().testTag("canvas_template_webapp")
+                            ) {
+                                Icon(Icons.Default.Web, contentDescription = null)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Create a web app prototype")
+                            }
                         }
                     }
                 } else {
