@@ -12,7 +12,9 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -67,6 +69,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -110,6 +114,7 @@ fun CallScreen(viewModel: ChatViewModel, onBack: () -> Unit) {
     var showScheduleHelp by remember { mutableStateOf(false) }
     val ttsRef = remember { mutableStateOf<TextToSpeech?>(null) }
     var ttsReady by remember { mutableStateOf(false) }
+    var mouthAnimating by remember { mutableStateOf(false) }
 
     val audioPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         audioGranted = granted
@@ -233,9 +238,11 @@ fun CallScreen(viewModel: ChatViewModel, onBack: () -> Unit) {
         ) {
             pendingAssistantResponse = false
             status = "${character.name} is speaking…"
+            mouthAnimating = true
             val spoken = response.content.take(5000)
             ttsRef.value?.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, "nexusai-" + response.id)
             delay((spoken.length * 48L).coerceIn(1800L, 45000L))
+            mouthAnimating = false
             if (inCall) {
                 shouldListen = true
                 status = "Listening… speak when you're ready"
@@ -280,11 +287,11 @@ fun CallScreen(viewModel: ChatViewModel, onBack: () -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Spacer(Modifier.height(12.dp))
-                Box(
-                    modifier = Modifier.size(178.dp).clip(CircleShape)
-                        .background(Brush.radialGradient(listOf(Color(0xFF46358E), Color(0xFF141424))).let { it }),
-                    contentAlignment = Alignment.Center
-                ) { Text(character.avatar, fontSize = 76.sp) }
+                CallAvatarFace(
+                    avatar = character.avatar,
+                    speaking = mouthAnimating,
+                    modifier = Modifier.size(178.dp)
+                )
                 Spacer(Modifier.height(14.dp))
                 Text(character.name, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
                 Text(status, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
@@ -326,6 +333,7 @@ fun CallScreen(viewModel: ChatViewModel, onBack: () -> Unit) {
                                 pendingAssistantResponse = false
                                 runCatching { recognizer?.cancel() }
                                 runCatching { ttsRef.value?.stop() }
+                                mouthAnimating = false
                                 status = "Call ended"
                             } else if (audioGranted) {
                                 inCall = true
@@ -435,10 +443,11 @@ private fun CharacterSetup(
         Text("Build your call character", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
         Text("Choose how NexusAI looks and sounds before the first call.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
         Spacer(Modifier.height(20.dp))
-        Box(
-            modifier = Modifier.size(126.dp).clip(CircleShape).background(Brush.radialGradient(listOf(Color(0xFF46358E), Color(0xFF141424)))),
-            contentAlignment = Alignment.Center
-        ) { Text(selectedAvatar, fontSize = 60.sp) }
+        CallAvatarFace(
+            avatar = selectedAvatar,
+            speaking = false,
+            modifier = Modifier.size(126.dp)
+        )
         Spacer(Modifier.height(14.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
             callAvatars.forEach { avatar ->
@@ -474,5 +483,53 @@ private fun CharacterSetup(
         }
         Spacer(Modifier.height(10.dp))
         Text("Microphone access is requested only when you start a call.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+    }
+}
+
+
+@Composable
+private fun CallAvatarFace(
+    avatar: String,
+    speaking: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val mouthHeight by animateDpAsState(
+        targetValue = if (speaking) 17.dp else 4.dp,
+        label = "NexusAI mouth animation"
+    )
+    val faceColor = when (avatar) {
+        "🦊" -> Color(0xFFF1A365)
+        "👾" -> Color(0xFF82D5BD)
+        "🐼" -> Color(0xFFE9E9F2)
+        "🌌" -> Color(0xFF9EA5EF)
+        "🧑‍🚀" -> Color(0xFFE8C4A9)
+        else -> Color(0xFFB7A6FA)
+    }
+    Canvas(modifier = modifier.clip(CircleShape)) {
+        val centerX = size.width / 2f
+        val centerY = size.height / 2f
+        val radius = size.minDimension * 0.43f
+        drawCircle(color = Color(0xFF32265F), radius = size.minDimension * 0.49f, center = Offset(centerX, centerY))
+        drawCircle(color = faceColor, radius = radius, center = Offset(centerX, centerY))
+        val eyeY = centerY - radius * 0.10f
+        val eyeRadius = radius * 0.055f
+        val eyeSpread = radius * 0.34f
+        drawCircle(color = Color(0xFF211A33), radius = eyeRadius, center = Offset(centerX - eyeSpread, eyeY))
+        drawCircle(color = Color(0xFF211A33), radius = eyeRadius, center = Offset(centerX + eyeSpread, eyeY))
+        val mouthWidth = radius * 0.37f
+        val mouthTop = centerY + radius * 0.22f
+        val actualMouthHeight = mouthHeight.toPx()
+        drawOval(
+            color = Color(0xFF34202D),
+            topLeft = Offset(centerX - mouthWidth / 2f, mouthTop),
+            size = Size(mouthWidth, actualMouthHeight)
+        )
+        if (speaking) {
+            drawOval(
+                color = Color(0xFFE986A4),
+                topLeft = Offset(centerX - mouthWidth * 0.25f, mouthTop + actualMouthHeight * 0.58f),
+                size = Size(mouthWidth * 0.5f, actualMouthHeight * 0.24f)
+            )
+        }
     }
 }
