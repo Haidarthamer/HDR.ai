@@ -11,6 +11,11 @@ import com.example.model.*
 import com.example.plugins.PluginRegistry
 import com.example.repository.CloudDataRepository
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -37,6 +42,74 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     val repository = CloudDataRepository(application)
     val pluginRegistry = PluginRegistry()
     private val engine = FastStreamingEngine(pluginRegistry)
+    private val apiKeyStore = com.example.auth.ApiKeyStore(application)
+    private val apiKeyHttpClient = OkHttpClient.Builder().callTimeout(15, TimeUnit.SECONDS).build()
+
+    private val _apiKeySetupState = MutableStateFlow("LOADING")
+    val apiKeySetupState: StateFlow<String> = _apiKeySetupState.asStateFlow()
+    private val _apiKeySetupMessage = MutableStateFlow("")
+    val apiKeySetupMessage: StateFlow<String> = _apiKeySetupMessage.asStateFlow()
+    private val _userApiKey = MutableStateFlow("")
+    private var apiKeyIdentity: String? = null
+
+    fun loadApiKeyForIdentity(identity: String) {
+        if (apiKeyIdentity == identity && _apiKeySetupState.value != "LOADING") return
+        apiKeyIdentity = identity
+        _userApiKey.value = ""
+        _apiKeySetupMessage.value = ""
+        _apiKeySetupState.value = "LOADING"
+        viewModelScope.launch(Dispatchers.IO) {
+            val savedKey = runCatching { apiKeyStore.getKey(identity) }.getOrNull().orEmpty()
+            withContext(Dispatchers.Main) {
+                if (apiKeyIdentity != identity) return@withContext
+                _userApiKey.value = savedKey
+                _apiKeySetupState.value = if (savedKey.isBlank()) "REQUIRED" else "READY"
+            }
+        }
+    }
+
+    fun validateAndSaveApiKey(rawKey: String) {
+        val key = rawKey.trim()
+        val identity = apiKeyIdentity
+        if (identity.isNullOrBlank()) {
+            _apiKeySetupState.value = "ERROR"
+            _apiKeySetupMessage.value = "Please sign in or continue as guest first."
+            return
+        }
+        if (key.isBlank()) {
+            _apiKeySetupState.value = "INVALID"
+            _apiKeySetupMessage.value = "Please enter your Gemini API key."
+            return
+        }
+        _apiKeySetupState.value = "CHECKING"
+        _apiKeySetupMessage.value = ""
+        viewModelScope.launch {
+            try {
+                val valid = withContext(Dispatchers.IO) {
+                    val encodedKey = java.net.URLEncoder.encode(key, "UTF-8")
+                    val request = Request.Builder()
+                        .url("https://generativelanguage.googleapis.com/v1beta/models?key=$encodedKey")
+                        .get()
+                        .build()
+                    apiKeyHttpClient.newCall(request).execute().use { response -> response.isSuccessful }
+                }
+                if (!valid) {
+                    _apiKeySetupState.value = "INVALID"
+                    _apiKeySetupMessage.value = "Your API key is incorrect or doesn't have access. Check it and try again."
+                    return@launch
+                }
+                withContext(Dispatchers.IO) { apiKeyStore.saveKey(identity, key) }
+                if (apiKeyIdentity == identity) {
+                    _userApiKey.value = key
+                    _apiKeySetupState.value = "SAVED"
+                    _apiKeySetupMessage.value = "API key verified and saved securely on this device."
+                }
+            } catch (_: Exception) {
+                _apiKeySetupState.value = "ERROR"
+                _apiKeySetupMessage.value = "Couldn't verify the key. Check your internet connection and try again."
+            }
+        }
+    }
 
     private val _currentDestination = MutableStateFlow<AppDestination>(AppDestination.Chat)
     val currentDestination: StateFlow<AppDestination> = _currentDestination.asStateFlow()
@@ -352,6 +425,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         relevantMemories = scoredMemories,
                         mode = _currentMode.value,
                         projectContext = _activeProject.value,
+                        apiKeyOverride = _userApiKey.value,
                         approvedToolIds = approvedToolIds,
                         forgeIntelligence = if (_isUltimateForge.value) ForgeIntelligence.ULTIMATE_USAGE else _forgeIntelligence.value,
                         limitProtection = _limitProtection.value,
