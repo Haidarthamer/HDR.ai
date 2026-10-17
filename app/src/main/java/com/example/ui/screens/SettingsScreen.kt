@@ -38,6 +38,7 @@ fun SettingsScreen(
     val dailyRequestState = chatViewModel?.dailyRequestCount?.collectAsState()
 
     var secondaryApiKeyInput by remember { mutableStateOf(secondaryKeyState?.value.orEmpty()) }
+    LaunchedEffect(secondaryKeyState?.value) { secondaryApiKeyInput = secondaryKeyState?.value.orEmpty() }
     var userNameInput by remember { mutableStateOf(user.name) }
     var userEmailInput by remember { mutableStateOf(user.email) }
     var apiKeyInput by remember { mutableStateOf(apiKeyOverride) }
@@ -188,10 +189,10 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.height(8.dp))
                     Button(onClick = { chatViewModel?.validateAndSaveSecondaryApiKey(secondaryApiKeyInput.trim()) }, modifier = Modifier.fillMaxWidth().testTag("save_secondary_api_key_button")) { Text("Verify & Save Secondary Key") }
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text("Daily Usage (this device)", fontWeight = FontWeight.Bold)
+                    Text("Daily Request Tracker (this device)", fontWeight = FontWeight.Bold)
                     Text("${dailyRequestState?.value ?: 0} requests started today", style = MaterialTheme.typography.bodyMedium)
                     LinearProgressIndicator(progress = { ((dailyRequestState?.value ?: 0).coerceAtLeast(0) / 50f).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp).testTag("daily_usage_progress"))
-                    Text("Local request count only; this is not the provider's remaining daily quota. Gemini limits vary by model and project.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Progress is a local visual reference (50 requests), not the provider daily limit or remaining quota. Gemini limits vary by model and project.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
 
