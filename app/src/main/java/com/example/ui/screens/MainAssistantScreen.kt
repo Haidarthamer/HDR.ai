@@ -1159,6 +1159,13 @@ fun ConversationHistoryDrawer(
                     selected = false,
                     onClick = { onNavigate(AppDestination.Files) }
                 )
+                NavigationDrawerItem(
+                    label = { Text("Settings & API Keys") },
+                    icon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                    selected = false,
+                    onClick = { onNavigate(AppDestination.Settings) },
+                    modifier = Modifier.testTag("drawer_settings_api_keys")
+                )
                 if (AuthenticationManager.isGuestMode.value) {
                     NavigationDrawerItem(
                         label = { Text("Sign In with Google") },
