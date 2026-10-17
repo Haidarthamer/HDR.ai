@@ -34,6 +34,24 @@ jobs:
         with:
           gradle-version: '9.3.1'
 
+      - name: Prepare Firebase configuration for Google Sign-In
+        env:
+          GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        run: |
+          if [ -s app/google-services.json ]; then
+            echo "Firebase config found at app/google-services.json."
+          elif [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            printf '%s' "$GOOGLE_SERVICES_JSON" > app/google-services.json
+            echo "Firebase config loaded from the GOOGLE_SERVICES_JSON repository secret."
+          else
+            echo "::warning title=Google Sign-In not configured::No app/google-services.json or GOOGLE_SERVICES_JSON secret found. The APK can still build for Guest Mode, but Google login will be unavailable."
+            {
+              echo "### Google Sign-In configuration missing"
+              echo "This build can be used in Guest Mode, but Google login will not work until the Firebase Android config is provided."
+              echo "Add `app/google-services.json` to the build source, or add a repository Actions secret named `GOOGLE_SERVICES_JSON` containing the full JSON file."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
 

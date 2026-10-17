@@ -13,6 +13,7 @@ import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential.Companion.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL
 import com.google.firebase.Firebase
+import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.auth
@@ -111,6 +112,34 @@ object AuthenticationManager {
         }
     }
 
+    /**
+     * Firebase Auth and Google Credential Manager require configuration generated from
+     * app/google-services.json. Return a user-facing explanation instead of masking the
+     * missing configuration as an unexplained FirebaseAuth initialization failure.
+     */
+    private fun getGoogleSignInConfigurationError(context: Context): String? {
+        val defaultAppInitialized = try {
+            FirebaseApp.getInstance()
+            true
+        } catch (e: IllegalStateException) {
+            Log.w(TAG, "Default Firebase app is not configured", e)
+            false
+        } catch (e: Exception) {
+            Log.w(TAG, "Unable to check Firebase configuration", e)
+            false
+        }
+
+        if (!defaultAppInitialized) {
+            return "Google Sign-In is not configured in this APK. The Firebase project config is missing. Continue as Guest for now; the app needs app/google-services.json and a new build."
+        }
+
+        if (getWebClientId(context).isNullOrBlank()) {
+            return "Google Sign-In setup is incomplete: the Web Client ID is missing. Add the Firebase config for package com.aistudio.nexusai.qkzvpx and rebuild."
+        }
+
+        return null
+    }
+
     fun signInWithGoogle(
         context: Context,
         credentialManager: CredentialManager,
@@ -119,15 +148,20 @@ object AuthenticationManager {
         onError: (String) -> Unit,
         onCancelled: () -> Unit = {}
     ) {
+        getGoogleSignInConfigurationError(context)?.let { configurationError ->
+            onError(configurationError)
+            return
+        }
+
         val authInstance = auth
         if (authInstance == null) {
-            onError("Firebase Auth is not initialized")
+            onError("Firebase Authentication couldn't start. Check the Firebase app configuration and rebuild.")
             return
         }
 
         val clientId = getWebClientId(context)
         if (clientId.isNullOrBlank()) {
-            onError("Web Client ID missing from google-services.json")
+            onError("Google Sign-In setup is incomplete: Web Client ID missing from app/google-services.json.")
             return
         }
 
