@@ -16,6 +16,7 @@ class ApiKeyStore(context: Context) {
     private val preferences = context.applicationContext.getSharedPreferences("nexusai_api_keys", Context.MODE_PRIVATE)
 
     fun getKey(identity: String): String? {
+        getSlot(identity, "primary")?.let { return it }
         val slot = slotFor(identity)
         val ivValue = preferences.getString("${slot}_iv", null) ?: return null
         val encryptedValue = preferences.getString("${slot}_value", null) ?: return null
