@@ -1,0 +1,161 @@
+{
+  "entities": {
+    "Conversation": {
+      "title": "Conversation",
+      "description": "User conversation thread with metadata",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "model": { "type": "string" },
+        "projectId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "messageCount": { "type": "integer" }
+      },
+      "required": ["id", "userId", "title", "createdAt", "updatedAt"]
+    },
+    "Message": {
+      "title": "Message",
+      "description": "Individual message inside conversation",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "conversationId": { "type": "string" },
+        "userId": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "assistant", "system"] },
+        "content": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "conversationId", "userId", "role", "content", "createdAt"]
+    },
+    "Project": {
+      "title": "Project",
+      "description": "Persistent workspace with custom instructions, files, and project memory",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "customInstructions": { "type": "string" },
+        "enabledPlugins": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "name", "createdAt", "updatedAt"]
+    },
+    "Artifact": {
+      "title": "Artifact",
+      "description": "Dedicated code, report, markdown, HTML, or document workspace entity",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "type": { "type": "string" },
+        "content": { "type": "string" },
+        "language": { "type": "string" },
+        "version": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "title", "type", "content", "createdAt", "updatedAt"]
+    },
+    "Automation": {
+      "title": "Automation",
+      "description": "Scheduled or recurring background task",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "prompt": { "type": "string" },
+        "schedule": { "type": "string" },
+        "enabled": { "type": "boolean" },
+        "lastRun": { "type": "string", "format": "date-time" },
+        "lastStatus": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "name", "prompt", "schedule", "enabled"]
+    },
+    "ActivityItem": {
+      "title": "ActivityItem",
+      "description": "Activity log entry for tool executions, research, or automation runs",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "title": { "type": "string" },
+        "category": { "type": "string" },
+        "status": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "title", "category", "status", "timestamp"]
+    },
+    "Memory": {
+      "title": "Memory",
+      "description": "User long-term memory item extracted or saved",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "key": { "type": "string" },
+        "value": { "type": "string" },
+        "category": { "type": "string" },
+        "projectId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "key", "value", "createdAt"]
+    },
+    "PluginConnection": {
+      "title": "PluginConnection",
+      "description": "Connected cloud plugin configuration and granted permissions",
+      "type": "object",
+      "properties": {
+        "pluginId": { "type": "string" },
+        "userId": { "type": "string" },
+        "account": { "type": "string" },
+        "connected": { "type": "boolean" },
+        "grantedPermissions": { "type": "array" },
+        "connectedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["pluginId", "userId", "connected"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/conversations/{conversationId}": {
+      "schema": { "$ref": "#/entities/Conversation" },
+      "description": "User conversation documents"
+    },
+    "/users/{userId}/conversations/{conversationId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/Message" },
+      "description": "Messages belonging to a conversation"
+    },
+    "/users/{userId}/projects/{projectId}": {
+      "schema": { "$ref": "#/entities/Project" },
+      "description": "User projects workspaces"
+    },
+    "/users/{userId}/artifacts/{artifactId}": {
+      "schema": { "$ref": "#/entities/Artifact" },
+      "description": "User generated artifacts"
+    },
+    "/users/{userId}/automations/{automationId}": {
+      "schema": { "$ref": "#/entities/Automation" },
+      "description": "User automations"
+    },
+    "/users/{userId}/activities/{activityId}": {
+      "schema": { "$ref": "#/entities/ActivityItem" },
+      "description": "User activity history"
+    },
+    "/users/{userId}/memories/{memoryId}": {
+      "schema": { "$ref": "#/entities/Memory" },
+      "description": "Long-term memories associated with user"
+    },
+    "/users/{userId}/plugin_connections/{pluginId}": {
+      "schema": { "$ref": "#/entities/PluginConnection" },
+      "description": "Plugin connections and OAuth permissions for user"
+    }
+  }
+}

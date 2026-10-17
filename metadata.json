@@ -1,0 +1,6 @@
+{
+  "name": "NexusAI",
+  "description": "Production-ready Gemini-powered AI assistant platform with cloud-based plugin SDK, multi-step tool router, and extensible integrations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
