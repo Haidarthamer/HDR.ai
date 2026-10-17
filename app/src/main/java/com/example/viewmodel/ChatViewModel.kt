@@ -501,6 +501,41 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     _statusNotice.value = null
                     _researchProgress.value = null
                     _activeToolRecords.value = emptyList()
+                } finally {
+                    // A Flow can finish without emitting StreamFinished or StreamError.
+                    // Always release the UI from the generating state in that case.
+                    if (_isStreaming.value) {
+                        Log.w("NexusAI_Chat", "Stream ended without a terminal event; clearing stuck streaming state.")
+                        val unfinishedText = _currentStreamingText.value
+                        val fallbackId = UUID.randomUUID().toString()
+                        val fallbackRole = if (unfinishedText.isBlank()) "error" else "assistant"
+                        val fallbackContent = if (unfinishedText.isBlank()) {
+                            "[INCOMPLETE_STREAM] Generation ended without a final response. Please retry."
+                        } else {
+                            "$unfinishedText\n\n*(Generation stopped before completion. Please retry.)*"
+                        }
+                        val fallbackMessage = FirestoreMessage(
+                            id = fallbackId,
+                            conversationId = convId,
+                            userId = repository.currentUserId ?: "",
+                            role = fallbackRole,
+                            content = fallbackContent
+                        )
+                        _messages.value = _messages.value + fallbackMessage
+                        viewModelScope.launch {
+                            repository.saveMessage(
+                                convId = convId,
+                                msgId = fallbackId,
+                                role = fallbackRole,
+                                content = fallbackContent
+                            )
+                        }
+                        _isStreaming.value = false
+                        _currentStreamingText.value = ""
+                        _statusNotice.value = null
+                        _researchProgress.value = null
+                        _activeToolRecords.value = emptyList()
+                    }
                 }
             }
         }
