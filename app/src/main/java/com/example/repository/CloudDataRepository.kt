@@ -19,15 +19,27 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 import java.util.UUID
 
-class CloudDataRepository(private val db: FirebaseFirestore) {
+class CloudDataRepository private constructor(
+    private val dbProvider: () -> FirebaseFirestore
+) {
 
-    constructor(context: Context) : this(
+    constructor(context: Context) : this({
         FirebaseFirestore.getInstance(
             context.applicationContext.getString(R.string.firestore_database_id)
         )
-    )
+    })
 
-    private val auth get() = Firebase.auth
+    // Defer Firebase initialization until a signed-in user actually needs cloud data.
+    // This keeps the app usable in Guest Mode when google-services.json is not available.
+    private val db: FirebaseFirestore by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        dbProvider()
+    }
+
+    private val auth get() = try {
+        Firebase.auth
+    } catch (_: Throwable) {
+        null
+    }
 
     // Local in-memory store for Guest Mode
     private val guestConversations = MutableStateFlow<List<FirestoreConversation>>(emptyList())
@@ -40,12 +52,12 @@ class CloudDataRepository(private val db: FirebaseFirestore) {
     private var guestPersonalization = UserPersonalization()
 
     val currentUserId: String?
-        get() = auth.currentUser?.uid ?: (if (AuthenticationManager.isGuestMode.value) "guest_local_user" else null)
+        get() = auth?.currentUser?.uid ?: (if (AuthenticationManager.isGuestMode.value) "guest_local_user" else null)
 
-    private fun isGuest(): Boolean = auth.currentUser == null
+    private fun isGuest(): Boolean = auth?.currentUser == null
 
     private fun requireUserId(): String {
-        return auth.currentUser?.uid ?: "guest_local_user"
+        return auth?.currentUser?.uid ?: "guest_local_user"
     }
 
     // --- Conversations Stream ---
@@ -56,7 +68,7 @@ class CloudDataRepository(private val db: FirebaseFirestore) {
             }
         }
 
-        val uid = auth.currentUser?.uid ?: return guestConversations.map { list ->
+        val uid = auth?.currentUser?.uid ?: return guestConversations.map { list ->
             if (projectIdFilter != null) list.filter { it.projectId == projectIdFilter } else list
         }
         val ref: Query = db.collection("users").document(uid).collection("conversations")
@@ -129,7 +141,7 @@ class CloudDataRepository(private val db: FirebaseFirestore) {
             }
             return
         }
-        val uid = auth.currentUser?.uid ?: return
+        val uid = auth?.currentUser?.uid ?: return
         try {
             db.collection("users").document(uid).collection("conversations").document(convId)
                 .update(mapOf("title" to newTitle, "updatedAt" to FieldValue.serverTimestamp())).await()
@@ -147,7 +159,7 @@ class CloudDataRepository(private val db: FirebaseFirestore) {
             }
             return
         }
-        val uid = auth.currentUser?.uid ?: return
+        val uid = auth?.currentUser?.uid ?: return
         try {
             db.collection("users").document(uid).collection("conversations").document(convId)
                 .update(mapOf("projectId" to (projectId ?: ""), "updatedAt" to FieldValue.serverTimestamp())).await()
@@ -162,7 +174,7 @@ class CloudDataRepository(private val db: FirebaseFirestore) {
             guestMessages.value = guestMessages.value - convId
             return
         }
-        val uid = auth.currentUser?.uid ?: return
+        val uid = auth?.currentUser?.uid ?: return
         try {
             val msgs = db.collection("users").document(uid).collection("conversations").document(convId).collection("messages").get().await()
             for (doc in msgs.documents) {
@@ -181,7 +193,7 @@ class CloudDataRepository(private val db: FirebaseFirestore) {
             return guestMessages.map { it[convId] ?: emptyList() }
         }
 
-        val uid = auth.currentUser?.uid ?: return guestMessages.map { it[convId] ?: emptyList() }
+        val uid = auth?.currentUser?.uid ?: return guestMessages.map { it[convId] ?: emptyList() }
         val ref = db.collection("users").document(uid).collection("conversations").document(convId).collection("messages")
             .orderBy("createdAt", Query.Direction.ASCENDING)
 
@@ -257,7 +269,7 @@ class CloudDataRepository(private val db: FirebaseFirestore) {
                 if (projectIdFilter != null) list.filter { it.projectId == projectIdFilter || it.projectId.isNullOrEmpty() } else list
             }
         }
-        val uid = auth.currentUser?.uid ?: return guestMemories.map { list ->
+        val uid = auth?.currentUser?.uid ?: return guestMemories.map { list ->
             if (projectIdFilter != null) list.filter { it.projectId == projectIdFilter || it.projectId.isNullOrEmpty() } else list
         }
         return db.collection("users").document(uid).collection("memories")
@@ -291,7 +303,7 @@ class CloudDataRepository(private val db: FirebaseFirestore) {
         val normalizedKey = key.trim().lowercase()
         val uid = requireUserId()
         val currentList = if (isGuest()) guestMemories.value else {
-            val uidAuth = auth.currentUser?.uid
+            val uidAuth = auth?.currentUser?.uid
             if (uidAuth != null) {
                 try {
                     val snap = db.collection("users").document(uidAuth).collection("memories").get().await()
@@ -378,7 +390,7 @@ class CloudDataRepository(private val db: FirebaseFirestore) {
             return
         }
 
-        val authUid = auth.currentUser?.uid ?: return
+        val authUid = auth?.currentUser?.uid ?: return
         try {
             val memRef = db.collection("users").document(authUid).collection("memories").document(memId)
             memRef.update(
@@ -402,7 +414,7 @@ class CloudDataRepository(private val db: FirebaseFirestore) {
         }
         guestMemories.value = guestMemories.value.filter { it.id != memId }
         if (isGuest()) return
-        val uid = auth.currentUser?.uid ?: return
+        val uid = auth?.currentUser?.uid ?: return
         try {
             val memDoc = db.collection("users").document(uid).collection("memories").document(memId).get().await()
             val memKey = memDoc.getString("key")
@@ -421,7 +433,7 @@ class CloudDataRepository(private val db: FirebaseFirestore) {
         }
         guestMemories.value = emptyList()
         if (isGuest()) return
-        val uid = auth.currentUser?.uid ?: return
+        val uid = auth?.currentUser?.uid ?: return
         try {
             val snapshot = db.collection("users").document(uid).collection("memories").get().await()
             for (doc in snapshot.documents) {
@@ -437,7 +449,7 @@ class CloudDataRepository(private val db: FirebaseFirestore) {
     // --- Projects Workspace System ---
     fun observeProjects(): Flow<List<FirestoreProject>> {
         if (isGuest()) return guestProjects
-        val uid = auth.currentUser?.uid ?: return guestProjects
+        val uid = auth?.currentUser?.uid ?: return guestProjects
         return db.collection("users").document(uid).collection("projects")
             .orderBy("updatedAt", Query.Direction.DESCENDING)
             .snapshots().map { snapshot ->
@@ -488,7 +500,7 @@ class CloudDataRepository(private val db: FirebaseFirestore) {
     suspend fun updateProject(project: FirestoreProject) {
         guestProjects.value = guestProjects.value.map { if (it.id == project.id) project else it }
         if (isGuest()) return
-        val uid = auth.currentUser?.uid ?: return
+        val uid = auth?.currentUser?.uid ?: return
         try {
             val ref = db.collection("users").document(uid).collection("projects").document(project.id)
             val payload = hashMapOf(
@@ -507,7 +519,7 @@ class CloudDataRepository(private val db: FirebaseFirestore) {
     suspend fun deleteProject(projectId: String) {
         guestProjects.value = guestProjects.value.filter { it.id != projectId }
         if (isGuest()) return
-        val uid = auth.currentUser?.uid ?: return
+        val uid = auth?.currentUser?.uid ?: return
         try {
             db.collection("users").document(uid).collection("projects").document(projectId).delete().await()
         } catch (e: Exception) {
@@ -518,7 +530,7 @@ class CloudDataRepository(private val db: FirebaseFirestore) {
     // --- Artifacts System ---
     fun observeArtifacts(): Flow<List<FirestoreArtifact>> {
         if (isGuest()) return guestArtifacts
-        val uid = auth.currentUser?.uid ?: return guestArtifacts
+        val uid = auth?.currentUser?.uid ?: return guestArtifacts
         return db.collection("users").document(uid).collection("artifacts")
             .orderBy("updatedAt", Query.Direction.DESCENDING)
             .snapshots().map { snapshot ->
@@ -611,7 +623,7 @@ class CloudDataRepository(private val db: FirebaseFirestore) {
     suspend fun deleteArtifact(artifactId: String) {
         guestArtifacts.value = guestArtifacts.value.filter { it.id != artifactId }
         if (isGuest()) return
-        val uid = auth.currentUser?.uid ?: return
+        val uid = auth?.currentUser?.uid ?: return
         try {
             db.collection("users").document(uid).collection("artifacts").document(artifactId).delete().await()
         } catch (e: Exception) {
@@ -622,7 +634,7 @@ class CloudDataRepository(private val db: FirebaseFirestore) {
     // --- Automations System ---
     fun observeAutomations(): Flow<List<FirestoreAutomation>> {
         if (isGuest()) return guestAutomations
-        val uid = auth.currentUser?.uid ?: return guestAutomations
+        val uid = auth?.currentUser?.uid ?: return guestAutomations
         return db.collection("users").document(uid).collection("automations")
             .orderBy("createdAt", Query.Direction.DESCENDING)
             .snapshots().map { snapshot ->
@@ -681,7 +693,7 @@ class CloudDataRepository(private val db: FirebaseFirestore) {
     suspend fun toggleAutomation(autoId: String, enabled: Boolean) {
         guestAutomations.value = guestAutomations.value.map { if (it.id == autoId) it.copy(enabled = enabled) else it }
         if (isGuest()) return
-        val uid = auth.currentUser?.uid ?: return
+        val uid = auth?.currentUser?.uid ?: return
         try {
             db.collection("users").document(uid).collection("automations").document(autoId)
                 .update("enabled", enabled).await()
@@ -693,7 +705,7 @@ class CloudDataRepository(private val db: FirebaseFirestore) {
     suspend fun runAutomationNow(autoId: String, name: String, resultSummary: String) {
         recordActivity("Executed Automation", name, "AUTOMATION")
         if (isGuest()) return
-        val uid = auth.currentUser?.uid ?: return
+        val uid = auth?.currentUser?.uid ?: return
         try {
             val ref = db.collection("users").document(uid).collection("automations").document(autoId)
             val historyItem = mapOf(
@@ -715,7 +727,7 @@ class CloudDataRepository(private val db: FirebaseFirestore) {
     suspend fun deleteAutomation(autoId: String) {
         guestAutomations.value = guestAutomations.value.filter { it.id != autoId }
         if (isGuest()) return
-        val uid = auth.currentUser?.uid ?: return
+        val uid = auth?.currentUser?.uid ?: return
         try {
             db.collection("users").document(uid).collection("automations").document(autoId).delete().await()
         } catch (e: Exception) {
@@ -726,7 +738,7 @@ class CloudDataRepository(private val db: FirebaseFirestore) {
     // --- Activities Center ---
     fun observeActivities(): Flow<List<FirestoreActivityItem>> {
         if (isGuest()) return guestActivities
-        val uid = auth.currentUser?.uid ?: return guestActivities
+        val uid = auth?.currentUser?.uid ?: return guestActivities
         return db.collection("users").document(uid).collection("activities")
             .orderBy("timestamp", Query.Direction.DESCENDING)
             .snapshots().map { snapshot ->
@@ -774,7 +786,7 @@ class CloudDataRepository(private val db: FirebaseFirestore) {
     suspend fun savePersonalization(settings: UserPersonalization) {
         guestPersonalization = settings
         if (isGuest()) return
-        val uid = auth.currentUser?.uid ?: return
+        val uid = auth?.currentUser?.uid ?: return
         try {
             val ref = db.collection("users").document(uid).collection("settings").document("personalization")
             val payload = hashMapOf(
@@ -795,7 +807,7 @@ class CloudDataRepository(private val db: FirebaseFirestore) {
 
     suspend fun loadPersonalization(): UserPersonalization {
         if (isGuest()) return guestPersonalization
-        val uid = auth.currentUser?.uid ?: return guestPersonalization
+        val uid = auth?.currentUser?.uid ?: return guestPersonalization
         return try {
             val doc = db.collection("users").document(uid).collection("settings").document("personalization").get().await()
             if (doc.exists()) {
