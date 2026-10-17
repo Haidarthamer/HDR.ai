@@ -51,6 +51,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val _apiKeySetupMessage = MutableStateFlow("")
     val apiKeySetupMessage: StateFlow<String> = _apiKeySetupMessage.asStateFlow()
     private val _userApiKey = MutableStateFlow("")
+    private val _secondaryApiKey = MutableStateFlow("")
+    val secondaryApiKey: StateFlow<String> = _secondaryApiKey.asStateFlow()
+    private val _dailyRequestCount = MutableStateFlow(0)
+    val dailyRequestCount: StateFlow<Int> = _dailyRequestCount.asStateFlow()
     private var apiKeyIdentity: String? = null
 
     fun loadApiKeyForIdentity(identity: String) {
@@ -61,9 +65,13 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         _apiKeySetupState.value = "LOADING"
         viewModelScope.launch(Dispatchers.IO) {
             val savedKey = runCatching { apiKeyStore.getKey(identity) }.getOrNull().orEmpty()
+            val savedSecondary = runCatching { apiKeyStore.getSecondaryKey(identity) }.getOrNull().orEmpty()
+            val requestsToday = runCatching { apiKeyStore.getDailyRequestCount(identity) }.getOrDefault(0)
             withContext(Dispatchers.Main) {
                 if (apiKeyIdentity != identity) return@withContext
                 _userApiKey.value = savedKey
+                _secondaryApiKey.value = savedSecondary
+                _dailyRequestCount.value = requestsToday
                 _apiKeySetupState.value = if (savedKey.isBlank()) "REQUIRED" else "READY"
             }
         }
@@ -108,6 +116,54 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             } catch (_: Exception) {
                 _apiKeySetupState.value = "ERROR"
                 _apiKeySetupMessage.value = "Couldn't verify the key. Check your internet connection and try again."
+            }
+        }
+    }
+
+    fun validateAndSaveSecondaryApiKey(rawKey: String) {
+        val key = rawKey.trim()
+        val identity = apiKeyIdentity
+        if (identity.isNullOrBlank()) {
+            _apiKeySetupMessage.value = "Please sign in or continue as guest first."
+            return
+        }
+        if (key.isBlank()) {
+            viewModelScope.launch(Dispatchers.IO) {
+                apiKeyStore.saveSecondaryKey(identity, "")
+                withContext(Dispatchers.Main) { _secondaryApiKey.value = "" }
+            }
+            return
+        }
+        viewModelScope.launch {
+            try {
+                val valid = withContext(Dispatchers.IO) {
+                    val encodedKey = java.net.URLEncoder.encode(key, "UTF-8")
+                    val request = Request.Builder()
+                        .url("https://generativelanguage.googleapis.com/v1beta/models?key=$encodedKey")
+                        .get().build()
+                    apiKeyHttpClient.newCall(request).execute().use { it.isSuccessful }
+                }
+                if (!valid) {
+                    _apiKeySetupMessage.value = "Secondary API key is incorrect or doesn't have access."
+                    return@launch
+                }
+                withContext(Dispatchers.IO) { apiKeyStore.saveSecondaryKey(identity, key) }
+                if (apiKeyIdentity == identity) {
+                    _secondaryApiKey.value = key
+                    _apiKeySetupMessage.value = "Secondary API key verified and saved securely on this device."
+                }
+            } catch (_: Exception) {
+                _apiKeySetupMessage.value = "Couldn't verify the secondary key. Check your connection and try again."
+            }
+        }
+    }
+
+    private fun recordRequestUsage() {
+        val identity = apiKeyIdentity ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            val count = runCatching { apiKeyStore.incrementDailyRequestCount(identity) }.getOrDefault(0)
+            withContext(Dispatchers.Main) {
+                if (apiKeyIdentity == identity) _dailyRequestCount.value = count
             }
         }
     }
@@ -423,6 +479,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 limit = 4
             )
 
+            recordRequestUsage()
             streamingJob = launch {
                 try {
                     engine.streamQuery(
@@ -432,6 +489,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         mode = _currentMode.value,
                         projectContext = _activeProject.value,
                         apiKeyOverride = _userApiKey.value,
+                        secondaryApiKeyOverride = _secondaryApiKey.value,
                         approvedToolIds = approvedToolIds,
                         forgeIntelligence = if (_isUltimateForge.value) ForgeIntelligence.ULTIMATE_USAGE else _forgeIntelligence.value,
                         limitProtection = _limitProtection.value,
