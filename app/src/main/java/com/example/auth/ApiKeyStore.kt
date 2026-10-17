@@ -30,15 +30,46 @@ class ApiKeyStore(context: Context) {
         }.getOrNull()
     }
 
-    fun saveKey(identity: String, apiKey: String) {
+    fun saveKey(identity: String, apiKey: String) = saveSlot(identity, "primary", apiKey)
+
+    fun getSecondaryKey(identity: String): String? = getSlot(identity, "secondary")
+
+    fun saveSecondaryKey(identity: String, apiKey: String) = saveSlot(identity, "secondary", apiKey)
+
+    fun getDailyRequestCount(identity: String): Int {
+        val day = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
         val slot = slotFor(identity)
+        if (preferences.getString("${slot}_usage_day", null) != day) return 0
+        return preferences.getInt("${slot}_daily_requests", 0)
+    }
+
+    fun incrementDailyRequestCount(identity: String): Int {
+        val day = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date())
+        val slot = slotFor(identity)
+        val current = if (preferences.getString("${slot}_usage_day", null) == day) preferences.getInt("${slot}_daily_requests", 0) else 0
+        val next = current + 1
+        preferences.edit().putString("${slot}_usage_day", day).putInt("${slot}_daily_requests", next).apply()
+        return next
+    }
+
+    private fun getSlot(identity: String, name: String): String? {
+        val slot = "${slotFor(identity)}_${name}"
+        val ivValue = preferences.getString("${slot}_iv", null) ?: return null
+        val encryptedValue = preferences.getString("${slot}_value", null) ?: return null
+        return runCatching {
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(slot), GCMParameterSpec(128, Base64.decode(ivValue, Base64.NO_WRAP)))
+            String(cipher.doFinal(Base64.decode(encryptedValue, Base64.NO_WRAP)), Charsets.UTF_8)
+        }.getOrNull()
+    }
+
+    private fun saveSlot(identity: String, name: String, apiKey: String) {
+        val slot = "${slotFor(identity)}_${name}"
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
         cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey(slot))
         val encrypted = cipher.doFinal(apiKey.toByteArray(Charsets.UTF_8))
-        preferences.edit()
-            .putString("${slot}_iv", Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
-            .putString("${slot}_value", Base64.encodeToString(encrypted, Base64.NO_WRAP))
-            .apply()
+        preferences.edit().putString("${slot}_iv", Base64.encodeToString(cipher.iv, Base64.NO_WRAP))
+            .putString("${slot}_value", Base64.encodeToString(encrypted, Base64.NO_WRAP)).apply()
     }
 
     private fun slotFor(identity: String): String {
