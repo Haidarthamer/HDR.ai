@@ -109,6 +109,12 @@ class FastStreamingEngine(
         val secondaryApiKey = secondaryApiKeyOverride?.takeIf { it.isNotBlank() && it != apiKey }
         var usedSecondaryKey = false
 
+        // Answer trivial conversational prompts locally to avoid spending API quota on greetings/basic arithmetic.
+        if (mode == ChatAssistantMode.NORMAL && detectReasoningTier(prompt, mode) == ReasoningTier.FAST) {
+            val quickReply = buildDirectSynthesis(prompt, emptyList(), emptyList(), mode)
+            emit(StreamEvent.StreamFinished(quickReply, emptyList(), emptyList(), null))
+            return@flow
+        }
         val enabledPlugins = pluginRegistry.getEnabledAndConnectedPlugins().let { list ->
             if (projectContext != null && projectContext.enabledPlugins.isNotEmpty()) {
                 list.filter { projectContext.enabledPlugins.contains(it.id) }
@@ -434,6 +440,7 @@ class FastStreamingEngine(
             5. Identity: If asked "Who created you?", answer "Haidar Thamer".
             6. Vague Inquiries: If the user asks "What is this?", inspect available conversation context; if context is absent, politely ask what they are referring to.
             7. Directness: Never output generic filler greetings or placeholders in lieu of real answers.
+            8. Token efficiency: Use the smallest sufficient reasoning effort. For edits to an existing project, preserve unrelated behavior and modify only the requested feature; do not regenerate unrelated files or repeat entire project code unless explicitly required.
 
             $designDirectives
             $responseStyleDirectives
