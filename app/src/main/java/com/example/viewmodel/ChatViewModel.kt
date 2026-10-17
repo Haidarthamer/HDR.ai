@@ -340,6 +340,11 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     // --- Message Dispatch with Optimistic UI & Fast Streaming ---
     fun sendMessage(userText: String) {
         if (userText.isBlank()) return
+        if (_userApiKey.value.isBlank()) {
+            _apiKeySetupState.value = "REQUIRED"
+            _apiKeySetupMessage.value = "Add and verify your Gemini API key before starting a chat."
+            return
+        }
         if (_isStreaming.value) {
             Log.w("NexusAI_Chat", "Ignoring duplicate concurrent send request while streaming is active.")
             return
