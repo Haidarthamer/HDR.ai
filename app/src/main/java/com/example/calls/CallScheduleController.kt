@@ -20,7 +20,7 @@ data class CallScheduleResult(
     val scheduledAtMillis: Long? = null,
     val message: String
 ) {
-    enum class Kind { SCHEDULED, NEEDS_CLARIFICATION, EVENT_SOURCE_REQUIRED }
+    enum class Kind { SCHEDULED, NEEDS_CLARIFICATION, EVENT_SOURCE_REQUIRED, MONITORING }
 }
 
 object CallScheduleController {
@@ -45,9 +45,13 @@ object CallScheduleController {
 
         if (callRequest && eventRequest) {
             prefs.edit().putBoolean(KEY_WAITING_FOR_TIME, false).apply()
+            val isGithubRequest = listOf("github", "git hub", "گيت هب", "جيت هب").any { normalized.contains(it) }
+            if (isGithubRequest) {
+                return GitHubWorkflowCallMonitor.configureFromMessage(context, text)
+            }
             return CallScheduleResult(
                 CallScheduleResult.Kind.EVENT_SOURCE_REQUIRED,
-                message = "Event-triggered calls need a connected Gmail/GitHub event source. That connection is not configured yet."
+                message = "Email-triggered calls need a connected Gmail account and background email monitoring. Gmail event monitoring is not connected yet."
             )
         }
 
@@ -147,7 +151,12 @@ object CallScheduleController {
         (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(notificationId)
     }
 
-    internal fun showIncomingCallNotification(context: Context, notificationId: Int) {
+    internal fun showIncomingCallNotification(
+        context: Context,
+        notificationId: Int,
+        title: String = "NexusAI is calling",
+        body: String = "It's time for the call you scheduled."
+    ) {
         if (Build.VERSION.SDK_INT >= 33 &&
             context.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
         ) return
@@ -182,8 +191,8 @@ object CallScheduleController {
         }
         val notification = builder
             .setSmallIcon(android.R.drawable.sym_action_call)
-            .setContentTitle("NexusAI is calling")
-            .setContentText("It's time for the call you scheduled.")
+            .setContentTitle(title)
+            .setContentText(body)
             .setCategory(Notification.CATEGORY_CALL)
             .setVisibility(Notification.VISIBILITY_PRIVATE)
             .setAutoCancel(true)
