@@ -35,6 +35,10 @@ import androidx.credentials.CredentialManager
 import com.example.auth.AuthenticationManager
 import com.example.calls.CallScheduleController
 import android.widget.Toast
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import com.example.model.*
 import com.example.viewmodel.AppDestination
 import com.example.viewmodel.ChatViewModel
@@ -70,6 +74,9 @@ fun MainAssistantScreen(
     var inputText by remember { mutableStateOf("") }
     var drawerOpen by remember { mutableStateOf(false) }
     var voiceListening by remember { mutableStateOf(false) }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (!granted) Toast.makeText(context, "Allow notifications so NexusAI can alert you for scheduled calls.", Toast.LENGTH_LONG).show()
+    }
 
     val listState = rememberLazyListState()
 
@@ -568,6 +575,13 @@ fun MainAssistantScreen(
                                     val scheduleResult = CallScheduleController.handleMessage(context, text)
                                     if (scheduleResult != null) {
                                         Toast.makeText(context, scheduleResult.message, Toast.LENGTH_LONG).show()
+                                        if ((scheduleResult.kind == com.example.calls.CallScheduleResult.Kind.SCHEDULED ||
+                                                scheduleResult.kind == com.example.calls.CallScheduleResult.Kind.MONITORING) &&
+                                            Build.VERSION.SDK_INT >= 33 &&
+                                            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                                        ) {
+                                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                        }
                                     }
                                     viewModel.sendMessage(text)
                                     inputText = ""

@@ -60,6 +60,18 @@ object GitHubWorkflowCallMonitor {
         )
     }
 
+    fun stopMonitoring(context: Context) {
+        val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(KEY_ENABLED, false).apply()
+        val intent = Intent(context, GitHubWorkflowMonitorReceiver::class.java).setAction(ACTION_POLL)
+        val pendingIntent = PendingIntent.getBroadcast(
+            context, POLL_REQUEST_CODE, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        (context.getSystemService(Context.ALARM_SERVICE) as AlarmManager).cancel(pendingIntent)
+        pendingIntent.cancel()
+    }
+
     fun scheduleNextPoll(context: Context, delayMillis: Long = POLL_INTERVAL_MS) {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         if (!prefs.getBoolean(KEY_ENABLED, false)) return

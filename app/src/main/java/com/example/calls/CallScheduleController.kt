@@ -20,11 +20,12 @@ data class CallScheduleResult(
     val scheduledAtMillis: Long? = null,
     val message: String
 ) {
-    enum class Kind { SCHEDULED, NEEDS_CLARIFICATION, EVENT_SOURCE_REQUIRED, MONITORING }
+    enum class Kind { SCHEDULED, NEEDS_CLARIFICATION, EVENT_SOURCE_REQUIRED, MONITORING, STOPPED }
 }
 
 object CallScheduleController {
     const val EXTRA_OPEN_CALL = "open_nexusai_call"
+    const val EXTRA_AUTO_ANSWER_CALL = "auto_answer_nexusai_call"
     const val CHANNEL_ID = "nexusai_incoming_calls"
     private const val PREFS = "nexusai_call_preferences"
     private const val KEY_WAITING_FOR_TIME = "waiting_for_call_time"
@@ -33,6 +34,18 @@ object CallScheduleController {
     fun handleMessage(context: Context, text: String): CallScheduleResult? {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val normalized = text.lowercase(Locale.ROOT)
+        val stopGithubRequest = listOf(
+            "stop github monitoring", "stop monitoring github", "stop checking github",
+            "وقف مراقبة github", "الغ مراقبة github", "أوقف مراقبة github"
+        ).any { normalized.contains(it) }
+        if (stopGithubRequest) {
+            prefs.edit().putBoolean(KEY_WAITING_FOR_TIME, false).apply()
+            GitHubWorkflowCallMonitor.stopMonitoring(context)
+            return CallScheduleResult(
+                CallScheduleResult.Kind.STOPPED,
+                message = "Stopped GitHub workflow monitoring."
+            )
+        }
         val callRequest = listOf(
             "call me", "schedule a call", "call me when", "call me at",
             "اتصل بي", "اتصل علي", "دگلي", "دكلي", "اتصل عندما", "اتصل من"
@@ -172,6 +185,7 @@ object CallScheduleController {
         }
         val openCallIntent = Intent(context, MainActivity::class.java)
             .putExtra(EXTRA_OPEN_CALL, true)
+            .putExtra(EXTRA_AUTO_ANSWER_CALL, true)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         val answerPending = PendingIntent.getActivity(
             context, notificationId, openCallIntent,

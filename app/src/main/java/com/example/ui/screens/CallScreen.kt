@@ -1,6 +1,9 @@
 package com.example.ui.screens
 
 import android.Manifest
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
@@ -92,6 +95,8 @@ private val callAccent = Color(0xFF7C5CFF)
 @Composable
 fun CallScreen(viewModel: ChatViewModel, onBack: () -> Unit) {
     val context = LocalContext.current
+    val hostActivity = remember(context) { context.findHostActivity() }
+    val autoAnswerRequested = hostActivity?.intent?.getBooleanExtra(CallScheduleController.EXTRA_AUTO_ANSWER_CALL, false) == true
     val messages by viewModel.messages.collectAsState()
     val isStreaming by viewModel.isStreaming.collectAsState()
     var character by remember { mutableStateOf(CallCharacterStore.load(context)) }
@@ -129,6 +134,20 @@ fun CallScreen(viewModel: ChatViewModel, onBack: () -> Unit) {
     }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (!granted) Toast.makeText(context, "Enable notifications so scheduled calls can appear outside the app.", Toast.LENGTH_LONG).show()
+    }
+
+    LaunchedEffect(autoAnswerRequested, character.configured, audioGranted) {
+        if (autoAnswerRequested && character.configured && !inCall) {
+            hostActivity?.intent?.removeExtra(CallScheduleController.EXTRA_AUTO_ANSWER_CALL)
+            if (audioGranted) {
+                inCall = true
+                shouldListen = true
+                status = "Answering scheduled call…"
+            } else {
+                waitingForMicPermission = true
+                audioPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            }
+        }
     }
 
     val recognizer = remember(context) {
@@ -400,7 +419,12 @@ fun CallScreen(viewModel: ChatViewModel, onBack: () -> Unit) {
                                     val result = CallScheduleController.scheduleFromText(context, scheduleTimeText)
                                     Toast.makeText(context, result.message, Toast.LENGTH_LONG).show()
                                     status = result.message
-                                    if (result.kind == com.example.calls.CallScheduleResult.Kind.SCHEDULED) showSchedulePanel = false
+                                    if (result.kind == com.example.calls.CallScheduleResult.Kind.SCHEDULED) {
+                                        if (Build.VERSION.SDK_INT >= 33 &&
+                                            context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                                        ) notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                        showSchedulePanel = false
+                                    }
                                 }) { Icon(Icons.Default.Check, contentDescription = null); Text("Save call") }
                                 TextButton(onClick = { showScheduleHelp = true }) { Text("How it works") }
                             }
@@ -530,6 +554,19 @@ private fun CallAvatarFace(
                 topLeft = Offset(centerX - mouthWidth * 0.25f, mouthTop + actualMouthHeight * 0.58f),
                 size = Size(mouthWidth * 0.5f, actualMouthHeight * 0.24f)
             )
+        }
+    }
+}
+
+
+private fun Context.findHostActivity(): Activity? {
+    var current: Context = this
+    while (true) {
+        if (current is Activity) return current
+        if (current is ContextWrapper) {
+            current = current.baseContext
+        } else {
+            return null
         }
     }
 }
