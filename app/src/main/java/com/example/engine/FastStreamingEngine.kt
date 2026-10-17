@@ -94,6 +94,7 @@ class FastStreamingEngine(
         mode: ChatAssistantMode = ChatAssistantMode.NORMAL,
         projectContext: FirestoreProject? = null,
         apiKeyOverride: String? = null,
+        secondaryApiKeyOverride: String? = null,
         approvedToolIds: Set<String> = emptySet(),
         forgeIntelligence: ForgeIntelligence = ForgeIntelligence.HIGH,
         limitProtection: Boolean = true,
@@ -103,6 +104,10 @@ class FastStreamingEngine(
             ?: (try { BuildConfig.GEMINI_API_KEY } catch (e: Exception) { "" }).takeIf { it.isNotBlank() && it != "MY_GEMINI_API_KEY" }
             ?: (try { System.getenv("GEMINI_API_KEY") } catch (e: Exception) { null })?.takeIf { it.isNotBlank() && it != "MY_GEMINI_API_KEY" }
             ?: ""
+
+        var activeApiKey = apiKey
+        val secondaryApiKey = secondaryApiKeyOverride?.takeIf { it.isNotBlank() && it != apiKey }
+        var usedSecondaryKey = false
 
         val enabledPlugins = pluginRegistry.getEnabledAndConnectedPlugins().let { list ->
             if (projectContext != null && projectContext.enabledPlugins.isNotEmpty()) {
@@ -487,7 +492,7 @@ class FastStreamingEngine(
                         generationConfig = adaptiveConfig
                     )
 
-                    val responseBody = GeminiNetworkClient.geminiService.streamGenerateContent(apiKey, req)
+                    val responseBody = GeminiNetworkClient.geminiService.streamGenerateContent(activeApiKey, req)
                     responseBody.use { rb ->
                         val reader = BufferedReader(InputStreamReader(rb.byteStream()))
                         var line: String? = null
@@ -528,7 +533,7 @@ class FastStreamingEngine(
                         break
                     } else {
                         // Stream was empty without HTTP error, try direct generateContent once
-                        val directResp = GeminiNetworkClient.geminiService.generateContent(apiKey, req)
+                        val directResp = GeminiNetworkClient.geminiService.generateContent(activeApiKey, req)
                         val directText = directResp.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: ""
                         if (directText.isNotBlank()) {
                             fullText = directText
@@ -545,12 +550,20 @@ class FastStreamingEngine(
                         break
                     }
 
-                    // Daily quota exhaustion: fall back to local high-fidelity synthesis
+                    // Use the secondary key only when the provider explicitly reports quota exhaustion.
+                    if (analysis.isQuotaExhausted && !usedSecondaryKey && !secondaryApiKey.isNullOrBlank()) {
+                        usedSecondaryKey = true
+                        activeApiKey = secondaryApiKey
+                        emit(StreamEvent.StatusNotice("Primary API quota reached. Switching to your secondary key..."))
+                        continue
+                    }
+
+                    // If both configured keys are exhausted, avoid further paid retries.
                     if (analysis.isQuotaExhausted) {
-                        Log.w("FastStreamingEngine", "Quota exhausted. Activating high-fidelity fallback synthesis.")
-                        emit(StreamEvent.StatusNotice("Daily quota reached. Falling back to local synthesis..."))
+                        Log.w("FastStreamingEngine", "Configured Gemini key quota exhausted. Activating local fallback synthesis.")
+                        emit(StreamEvent.StatusNotice("Configured API key quota reached. Using local fallback..."))
                         val localSynthesis = buildDirectSynthesis(prompt, executedTools, citations, mode)
-                        fullText = localSynthesis + "\n\n> ℹ️ *Note: Gemini free-tier daily quota limit was reached. Response generated using on-device synthesis.*"
+                        fullText = localSynthesis + "\n\n> ℹ️ *The configured Gemini key quota was reached. This response uses local fallback synthesis.*"
                         break
                     }
 
