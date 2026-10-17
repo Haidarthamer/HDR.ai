@@ -27,6 +27,15 @@ fun CloudMemoryScreen(
 ) {
     val memories by viewModel.memories.collectAsState()
     var showAddDialog by remember { mutableStateOf(false) }
+    var searchQuery by remember { mutableStateOf("") }
+    val filteredMemories = remember(memories, searchQuery) {
+        val query = searchQuery.trim().lowercase()
+        if (query.isBlank()) memories else memories.filter { memory ->
+            memory.key.lowercase().contains(query) ||
+                memory.value.lowercase().contains(query) ||
+                memory.category.lowercase().contains(query)
+        }
+    }
 
     BackHandler(onBack = onBack)
     var keyInput by remember { mutableStateOf("") }
@@ -35,7 +44,7 @@ fun CloudMemoryScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Cloud Long-Term Memory", fontWeight = FontWeight.Bold, fontSize = 20.sp) },
+                title = { Text("Nexus Cortex", fontWeight = FontWeight.Bold, fontSize = 20.sp) },
                 navigationIcon = {
                     IconButton(onClick = onBack, modifier = Modifier.testTag("back_from_memory_button")) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -65,18 +74,28 @@ fun CloudMemoryScreen(
                     Icon(Icons.Default.Psychology, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = "Synchronized to your cloud account. The AI assistant extracts and queries these facts across conversations.",
+                        text = "Your personal knowledge hub. NexusAI reuses relevant saved facts across conversations; you can search, edit, or remove anything here.",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
             }
+
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp).testTag("cortex_memory_search"),
+                label = { Text("Search your memories") },
+                placeholder = { Text("Project, preference, technology…") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                singleLine = true
+            )
 
             Row(
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("${memories.size} Memories Stored", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                Text("${filteredMemories.size} of ${memories.size} Memories", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                 if (memories.isNotEmpty()) {
                     TextButton(onClick = { viewModel.clearAllMemories() }) {
                         Text("Clear All", color = MaterialTheme.colorScheme.error)
@@ -85,7 +104,7 @@ fun CloudMemoryScreen(
             }
 
             LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(memories, key = { it.id }) { mem ->
+                items(filteredMemories, key = { it.id }) { mem ->
                     var showEditDialog by remember { mutableStateOf(false) }
                     var editKey by remember { mutableStateOf(mem.key) }
                     var editValue by remember { mutableStateOf(mem.value) }
