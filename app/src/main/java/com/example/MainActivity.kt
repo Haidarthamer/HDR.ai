@@ -37,6 +37,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        if (intent?.getBooleanExtra(com.example.calls.CallScheduleController.EXTRA_OPEN_CALL, false) == true) {
+            viewModel.navigateTo(AppDestination.Call)
+        }
         setContent {
             MyApplicationTheme {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -134,6 +137,7 @@ fun AppRoot(viewModel: ChatViewModel) {
             is AppDestination.Memory -> MemoryScreenWrapper(viewModel = viewModel)
             is AppDestination.Files -> FilesScreenWrapper(viewModel = viewModel)
             is AppDestination.Settings -> SettingsScreenWrapper(viewModel = viewModel)
+            is AppDestination.Call -> CallScreen(viewModel = viewModel, onBack = { viewModel.navigateTo(AppDestination.Chat) })
         }
     }
 }

@@ -35,6 +35,7 @@ sealed class AppDestination {
     object Memory : AppDestination()
     object Files : AppDestination()
     object Settings : AppDestination()
+    object Call : AppDestination()
 }
 
 class ChatViewModel(application: Application) : AndroidViewModel(application) {

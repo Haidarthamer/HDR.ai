@@ -33,6 +33,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.credentials.CredentialManager
 import com.example.auth.AuthenticationManager
+import com.example.calls.CallScheduleController
+import android.widget.Toast
 import com.example.model.*
 import com.example.viewmodel.AppDestination
 import com.example.viewmodel.ChatViewModel
@@ -124,6 +126,12 @@ fun MainAssistantScreen(
                         }
 
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = { viewModel.navigateTo(AppDestination.Call) },
+                                modifier = Modifier.testTag("header_voice_call_button")
+                            ) {
+                                Icon(Icons.Default.Call, contentDescription = "Start NexusAI voice call")
+                            }
                             IconButton(
                                 onClick = { viewModel.startNewConversation() },
                                 modifier = Modifier.testTag("header_new_chat_button")
@@ -557,6 +565,10 @@ fun MainAssistantScreen(
                             onClick = {
                                 val text = inputText.trim()
                                 if (text.isNotBlank()) {
+                                    val scheduleResult = CallScheduleController.handleMessage(context, text)
+                                    if (scheduleResult != null) {
+                                        Toast.makeText(context, scheduleResult.message, Toast.LENGTH_LONG).show()
+                                    }
                                     viewModel.sendMessage(text)
                                     inputText = ""
                                     voiceListening = false
