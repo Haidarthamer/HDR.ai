@@ -34,7 +34,10 @@ fun SettingsScreen(
     val personalizationState = chatViewModel?.personalization?.collectAsState()
     val currentStyle = personalizationState?.value?.responseStyle ?: "Concise & Direct"
     val compressionEnabled = personalizationState?.value?.contextCompressionEnabled ?: true
+    val secondaryKeyState = chatViewModel?.secondaryApiKey?.collectAsState()
+    val dailyRequestState = chatViewModel?.dailyRequestCount?.collectAsState()
 
+    var secondaryApiKeyInput by remember { mutableStateOf(secondaryKeyState?.value.orEmpty()) }
     var userNameInput by remember { mutableStateOf(user.name) }
     var userEmailInput by remember { mutableStateOf(user.email) }
     var apiKeyInput by remember { mutableStateOf(apiKeyOverride) }
@@ -174,6 +177,21 @@ fun SettingsScreen(
                             Text("Save Key")
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("Secondary API Key (Automatic Fallback)", fontWeight = FontWeight.Bold)
+                    Text("Used when the primary key reports quota exhaustion. Stored encrypted on this device for the current account.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    OutlinedTextField(value = secondaryApiKeyInput, onValueChange = { secondaryApiKeyInput = it }, placeholder = { Text("Optional secondary Gemini key") }, modifier = Modifier.fillMaxWidth().testTag("secondary_api_key_input"), shape = RoundedCornerShape(8.dp), singleLine = true)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(onClick = { chatViewModel?.validateAndSaveSecondaryApiKey(secondaryApiKeyInput.trim()) }, modifier = Modifier.fillMaxWidth().testTag("save_secondary_api_key_button")) { Text("Verify & Save Secondary Key") }
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("Daily Usage (this device)", fontWeight = FontWeight.Bold)
+                    Text("${dailyRequestState?.value ?: 0} requests started today", style = MaterialTheme.typography.bodyMedium)
+                    LinearProgressIndicator(progress = { ((dailyRequestState?.value ?: 0).coerceAtLeast(0) / 50f).coerceIn(0f, 1f) }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp).testTag("daily_usage_progress"))
+                    Text("Local request count only; this is not the provider's remaining daily quota. Gemini limits vary by model and project.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
 
