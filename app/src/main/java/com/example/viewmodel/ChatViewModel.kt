@@ -677,6 +677,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+        return true
     }
 
     fun stopGeneration() {
@@ -707,7 +708,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 _currentStreamingText.value = ""
             }
         }
-        return true
     }
 
     fun approveAction() {
