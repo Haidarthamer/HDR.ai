@@ -583,9 +583,20 @@ fun MainAssistantScreen(
                                             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                                         }
                                     }
-                                    viewModel.sendMessage(text)
-                                    inputText = ""
-                                    voiceListening = false
+                                    val accepted = viewModel.sendMessage(text)
+                                    if (accepted) {
+                                        inputText = ""
+                                        voiceListening = false
+                                    } else {
+                                        val message = if (viewModel.apiKeySetupState.value == "REQUIRED") {
+                                            "Add and verify your Gemini API key before sending a message."
+                                        } else if (viewModel.isStreaming.value) {
+                                            "NexusAI is still generating a response."
+                                        } else {
+                                            "Message wasn't sent. Please try again."
+                                        }
+                                        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                                    }
                                 }
                             },
                             enabled = inputText.isNotBlank(),
