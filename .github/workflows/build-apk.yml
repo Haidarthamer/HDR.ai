@@ -127,8 +127,69 @@ jobs:
             echo "Validation checks the JSON structure, Firebase project metadata, API key, exact Android package, and Web OAuth client presence. Enable Email/Password and Google providers in Firebase Authentication separately."
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Prepare stable CI debug signing (optional, recommended for Google Sign-In)
+        env:
+          ANDROID_DEBUG_KEYSTORE_BASE64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_BASE64 }}
+          ANDROID_DEBUG_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEYSTORE_PASSWORD }}
+          ANDROID_DEBUG_KEY_ALIAS: ${{ secrets.ANDROID_DEBUG_KEY_ALIAS }}
+          ANDROID_DEBUG_KEY_PASSWORD: ${{ secrets.ANDROID_DEBUG_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${ANDROID_DEBUG_KEYSTORE_BASE64:-}" ]; then
+            if [ -n "${ANDROID_DEBUG_KEYSTORE_PASSWORD:-}" ] || [ -n "${ANDROID_DEBUG_KEY_ALIAS:-}" ] || [ -n "${ANDROID_DEBUG_KEY_PASSWORD:-}" ]; then
+              echo "::error::Configure all four ANDROID_DEBUG_KEYSTORE_* secrets together; do not leave a partial signing setup."
+              exit 1
+            fi
+            echo "::warning title=Stable signing not configured::This build uses a runner-generated debug certificate. Its SHA-1 can change on the next build, which may break Firebase Google Sign-In."
+            {
+              echo "### Android signing certificate"
+              echo "A stable CI debug keystore is not configured. The SHA-1 fingerprint printed below may change on a future build. Configure the four ANDROID_DEBUG_KEYSTORE_* repository secrets as described in FIREBASE_SETUP.md for a stable Google Sign-In certificate."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [ -z "${ANDROID_DEBUG_KEYSTORE_PASSWORD:-}" ] || [ -z "${ANDROID_DEBUG_KEY_ALIAS:-}" ] || [ -z "${ANDROID_DEBUG_KEY_PASSWORD:-}" ]; then
+            echo "::error::ANDROID_DEBUG_KEYSTORE_BASE64 requires ANDROID_DEBUG_KEYSTORE_PASSWORD, ANDROID_DEBUG_KEY_ALIAS, and ANDROID_DEBUG_KEY_PASSWORD."
+            exit 1
+          fi
+
+          KEYSTORE_PATH="$RUNNER_TEMP/nexusai-ci-debug.keystore"
+          printf '%s' "$ANDROID_DEBUG_KEYSTORE_BASE64" | tr -d '[:space:]' | base64 --decode > "$KEYSTORE_PATH"
+          keytool -list -keystore "$KEYSTORE_PATH" -storepass "$ANDROID_DEBUG_KEYSTORE_PASSWORD" -alias "$ANDROID_DEBUG_KEY_ALIAS" >/dev/null
+          {
+            echo "ANDROID_DEBUG_KEYSTORE_PATH=$KEYSTORE_PATH"
+            echo "ANDROID_DEBUG_KEYSTORE_PASSWORD=$ANDROID_DEBUG_KEYSTORE_PASSWORD"
+            echo "ANDROID_DEBUG_KEY_ALIAS=$ANDROID_DEBUG_KEY_ALIAS"
+            echo "ANDROID_DEBUG_KEY_PASSWORD=$ANDROID_DEBUG_KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+          echo "Stable CI debug signing key validated and configured."
+
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
+
+      - name: Report APK signing certificate SHA-1
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          APKSIGNER="$(find "${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          if [ -z "$APKSIGNER" ] || [ ! -x "$APKSIGNER" ]; then
+            echo "::warning::Could not locate apksigner to report APK certificate fingerprint."
+            exit 0
+          fi
+          CERT_OUTPUT="$("$APKSIGNER" verify --print-certs "$APK")"
+          SHA1="$(printf '%s\n' "$CERT_OUTPUT" | sed -n 's/.*certificate SHA-1 digest: //Ip' | head -n 1)"
+          echo "APK signing certificate SHA-1: $SHA1"
+          {
+            echo "### APK signing certificate SHA-1"
+            echo "`$SHA1`"
+            if [ -n "${ANDROID_DEBUG_KEYSTORE_PATH:-}" ]; then
+              echo "This fingerprint uses the configured stable CI debug keystore."
+            else
+              echo "This fingerprint uses the runner-generated debug key and may change on a later build. Configure the stable signing secrets before relying on Google Sign-In."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
