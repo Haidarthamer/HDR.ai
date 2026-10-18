@@ -8,6 +8,19 @@ plugins {
   alias(libs.plugins.google.services)
 }
 
+// Optional persistent debug signing for CI. This keeps Google's SHA-1 fingerprint stable
+// between GitHub Actions builds when the corresponding Actions secrets are configured.
+val ciDebugKeystorePath = System.getenv("ANDROID_DEBUG_KEYSTORE_PATH")
+val ciDebugKeystorePassword = System.getenv("ANDROID_DEBUG_KEYSTORE_PASSWORD")
+val ciDebugKeyAlias = System.getenv("ANDROID_DEBUG_KEY_ALIAS")
+val ciDebugKeyPassword = System.getenv("ANDROID_DEBUG_KEY_PASSWORD")
+val useStableCiDebugSigning = listOf(
+  ciDebugKeystorePath,
+  ciDebugKeystorePassword,
+  ciDebugKeyAlias,
+  ciDebugKeyPassword
+).all { !it.isNullOrBlank() }
+
 android {
   namespace = "com.example"
   compileSdk { version = release(36) { minorApiLevel = 1 } }
@@ -30,16 +43,30 @@ android {
       keyAlias = "upload"
       keyPassword = System.getenv("KEY_PASSWORD")
     }
+
+    if (useStableCiDebugSigning) {
+      create("ciDebug") {
+        storeFile = file(requireNotNull(ciDebugKeystorePath))
+        storePassword = requireNotNull(ciDebugKeystorePassword)
+        keyAlias = requireNotNull(ciDebugKeyAlias)
+        keyPassword = requireNotNull(ciDebugKeyPassword)
+      }
+    }
   }
 
   buildTypes {
+    debug {
+      if (useStableCiDebugSigning) {
+        signingConfig = signingConfigs.getByName("ciDebug")
+      }
+    }
     release {
       isCrunchPngs = false
       isMinifyEnabled = false
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       signingConfig = signingConfigs.getByName("release")
     }
-    // Use Android Gradle Plugin default debug signing in CI.
+    // With no CI signing secrets, Android's default debug certificate is used.
   }
   compileOptions {
     sourceCompatibility = JavaVersion.VERSION_11
@@ -67,7 +94,6 @@ secrets {
 googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }
 
 // Some unused dependencies are commented out below instead of being removed.
-// This makes it easy to add them back in the future if needed.
 dependencies {
   implementation(platform(libs.androidx.compose.bom))
   implementation(platform(libs.firebase.bom))
@@ -97,8 +123,7 @@ dependencies {
   // Uncomment to use Firestore:
   implementation(libs.firebase.firestore)
 
-  // Uncomment ALL FOUR of the following dependencies together to use Firebase Auth and Google
-  // Sign-In via Credential Manager:
+  // Firebase Auth and Google Sign-In via Credential Manager.
   implementation(libs.firebase.auth)
   implementation(libs.androidx.credentials)
   implementation(libs.androidx.credentials.play.services)
