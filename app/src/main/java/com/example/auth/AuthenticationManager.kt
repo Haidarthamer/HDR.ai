@@ -2,6 +2,7 @@ package com.example.auth
 
 import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
 import android.util.Log
 import androidx.credentials.ClearCredentialStateRequest
 import androidx.credentials.CredentialManager
@@ -52,6 +53,21 @@ object AuthenticationManager {
         null
     }
 
+    /**
+     * Compose may provide a ContextThemeWrapper rather than an Activity directly.
+     * Credential Manager's interactive Google sign-in flow must receive the Activity.
+     */
+    private fun findActivity(context: Context): Activity? {
+        var current: Context = context
+        while (true) {
+            if (current is Activity) return current
+            if (current !is ContextWrapper) return null
+            val next = current.baseContext
+            if (next === current) return null
+            current = next
+        }
+    }
+
     init {
         try {
             auth?.addAuthStateListener { firebaseAuth ->
@@ -73,6 +89,11 @@ object AuthenticationManager {
         val authInstance = auth
         if (authInstance?.currentUser != null) {
             onSuccess()
+            return
+        }
+        if (authInstance == null) {
+            Log.w(TAG, "Firebase Auth is unavailable during automatic sign-in")
+            onUnauthenticated()
             return
         }
 
@@ -100,7 +121,7 @@ object AuthenticationManager {
                 if (credential is CustomCredential && credential.type == TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
                     val googleIdToken = GoogleIdTokenCredential.createFrom(credential.data).idToken
                     val authCredential = GoogleAuthProvider.getCredential(googleIdToken, null)
-                    authInstance?.signInWithCredential(authCredential)?.await()
+                    authInstance.signInWithCredential(authCredential).await()
                     onSuccess()
                 } else {
                     onUnauthenticated()
@@ -159,6 +180,12 @@ object AuthenticationManager {
             return
         }
 
+        val activity = findActivity(context)
+        if (activity == null) {
+            onError("Google Sign-In couldn't open this screen. Return to the sign-in screen and try again.")
+            return
+        }
+
         val clientId = getWebClientId(context)
         if (clientId.isNullOrBlank()) {
             onError("Google Sign-In setup is incomplete: Web Client ID missing from app/google-services.json.")
@@ -172,7 +199,7 @@ object AuthenticationManager {
 
         scope.launch {
             try {
-                val result = credentialManager.getCredential(context as Activity, request)
+                val result = credentialManager.getCredential(activity, request)
                 val credential = result.credential
                 if (credential is CustomCredential && credential.type == TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
                     val googleIdToken = GoogleIdTokenCredential.createFrom(credential.data).idToken
