@@ -395,16 +395,16 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // --- Message Dispatch with Optimistic UI & Fast Streaming ---
-    fun sendMessage(userText: String) {
-        if (userText.isBlank()) return
+    fun sendMessage(userText: String): Boolean {
+        if (userText.isBlank()) return false
         if (_userApiKey.value.isBlank()) {
             _apiKeySetupState.value = "REQUIRED"
             _apiKeySetupMessage.value = "Add and verify your Gemini API key before starting a chat."
-            return
+            return false
         }
         if (_isStreaming.value) {
             Log.w("NexusAI_Chat", "Ignoring duplicate concurrent send request while streaming is active.")
-            return
+            return false
         }
         val currentConvId = _activeConversationId.value
 
@@ -707,6 +707,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 _currentStreamingText.value = ""
             }
         }
+        return true
     }
 
     fun approveAction() {
