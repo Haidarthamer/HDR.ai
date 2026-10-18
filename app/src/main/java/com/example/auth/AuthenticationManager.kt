@@ -122,6 +122,12 @@ object AuthenticationManager {
                     val googleIdToken = GoogleIdTokenCredential.createFrom(credential.data).idToken
                     val authCredential = GoogleAuthProvider.getCredential(googleIdToken, null)
                     authInstance.signInWithCredential(authCredential).await()
+                    // Update Compose state immediately instead of relying only on the auth listener.
+                    _currentUserFlow.value = authInstance.currentUser
+                    _isGuestMode.value = false
+                    if (authInstance.currentUser == null) {
+                        throw IllegalStateException("Google sign-in completed but Firebase returned no current user")
+                    }
                     onSuccess()
                 } else {
                     onUnauthenticated()
@@ -205,6 +211,12 @@ object AuthenticationManager {
                     val googleIdToken = GoogleIdTokenCredential.createFrom(credential.data).idToken
                     val authCredential = GoogleAuthProvider.getCredential(googleIdToken, null)
                     authInstance.signInWithCredential(authCredential).await()
+                    // Update Compose state immediately instead of relying only on the auth listener.
+                    _currentUserFlow.value = authInstance.currentUser
+                    _isGuestMode.value = false
+                    if (authInstance.currentUser == null) {
+                        throw IllegalStateException("Google sign-in completed but Firebase returned no current user")
+                    }
                     onSuccess()
                 } else {
                     onError("Unrecognized credential type")
