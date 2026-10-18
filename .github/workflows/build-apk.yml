@@ -34,23 +34,98 @@ jobs:
         with:
           gradle-version: '9.3.1'
 
-      - name: Prepare Firebase configuration for Google Sign-In
+      - name: Prepare Firebase configuration
         env:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
+        shell: bash
         run: |
+          set -euo pipefail
           if [ -s app/google-services.json ]; then
-            echo "Firebase config found at app/google-services.json."
-          elif [ -n "$GOOGLE_SERVICES_JSON" ]; then
+            echo "Using app/google-services.json from the source tree."
+          elif [ -n "${GOOGLE_SERVICES_JSON:-}" ]; then
             printf '%s' "$GOOGLE_SERVICES_JSON" > app/google-services.json
-            echo "Firebase config loaded from the GOOGLE_SERVICES_JSON repository secret."
+            echo "Loaded Firebase configuration from the GOOGLE_SERVICES_JSON Actions secret."
           else
-            echo "::warning title=Google Sign-In not configured::No app/google-services.json or GOOGLE_SERVICES_JSON secret found. The APK can still build for Guest Mode, but Google login will be unavailable."
+            echo "::warning title=Firebase not configured::No app/google-services.json file or GOOGLE_SERVICES_JSON secret was provided. Authentication will not work in this APK; Guest Mode only."
             {
-              echo "### Google Sign-In configuration missing"
-              echo "This build can be used in Guest Mode, but Google login will not work until the Firebase Android config is provided."
-              echo "Add `app/google-services.json` to the build source, or add a repository Actions secret named `GOOGLE_SERVICES_JSON` containing the full JSON file."
+              echo "### Firebase configuration: MISSING"
+              echo "This APK can build, but Google Sign-In and email/password account authentication cannot work until a real Firebase Android configuration is connected."
+              echo "See [FIREBASE_SETUP.md](https://github.com/Haidarthamer/HDR.ai/blob/main/FIREBASE_SETUP.md) for setup."
             } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
+
+      - name: Validate Firebase configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -s app/google-services.json ]; then
+            echo "No Firebase config supplied; continuing with Guest Mode build."
+            exit 0
+          fi
+
+          python3 - <<'PY'
+          import json
+          import sys
+
+          path = "app/google-services.json"
+          expected_package = "com.aistudio.nexusai.qkzvpx"
+
+          try:
+              with open(path, "r", encoding="utf-8") as f:
+                  config = json.load(f)
+          except Exception as exc:
+              sys.exit(f"Firebase config is not valid JSON: {exc}")
+
+          project = config.get("project_info") or {}
+          if not project.get("project_id") or not project.get("project_number"):
+              sys.exit("Firebase config is missing project_info.project_id or project_info.project_number.")
+
+          clients = config.get("client") or []
+          match = next(
+              (
+                  client for client in clients
+                  if ((client.get("client_info") or {}).get("android_client_info") or {}).get("package_name")
+                  == expected_package
+              ),
+              None,
+          )
+          if not match:
+              actual = [
+                  ((c.get("client_info") or {}).get("android_client_info") or {}).get("package_name")
+                  for c in clients
+              ]
+              sys.exit(
+                  f"Firebase config has no Android client for {expected_package}. "
+                  f"Packages found: {actual}. Register the exact package name in Firebase and download a fresh JSON."
+              )
+
+          if not any(key.get("current_key") for key in (match.get("api_key") or [])):
+              sys.exit("Firebase config has no API key for the matching Android app.")
+
+          oauth_clients = match.get("oauth_client") or []
+          has_web_client = any(
+              str(client.get("client_type")) == "3" and client.get("client_id")
+              for client in oauth_clients
+          )
+          if has_web_client:
+              print("Firebase JSON is valid and the package name matches.")
+              print("A Web OAuth client ID is present for Google Sign-In.")
+              status = "Config valid; package matches; Web OAuth client ID found."
+          else:
+              print("::warning title=Google Sign-In incomplete::Firebase config matches the package, but no Web OAuth client ID (client_type 3) was found.")
+              print("Email/password can still work if enabled in Firebase Authentication. Google Sign-In requires completing the Google provider setup and downloading a refreshed JSON.")
+              status = "Config valid; package matches; Web OAuth client ID MISSING. Google Sign-In remains unconfigured."
+          with open("/tmp/firebase-summary.txt", "w", encoding="utf-8") as f:
+              f.write(status)
+          PY
+
+          {
+            echo "### Firebase configuration: validated"
+            cat /tmp/firebase-summary.txt
+            echo
+            echo "Validation checks the JSON structure, Firebase project metadata, API key, exact Android package, and Web OAuth client presence. Enable Email/Password and Google providers in Firebase Authentication separately."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
