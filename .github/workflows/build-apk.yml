@@ -181,14 +181,64 @@ jobs:
           CERT_OUTPUT="$("$APKSIGNER" verify --print-certs "$APK")"
           SHA1="$(printf '%s\n' "$CERT_OUTPUT" | sed -n 's/.*certificate SHA-1 digest: //Ip' | head -n 1)"
           echo "APK signing certificate SHA-1: $SHA1"
+
+          # Verify that the Firebase JSON includes an Android OAuth client for
+          # the exact package and the certificate that actually signed this APK.
+          OAUTH_SHA1_STATUS="not checked (Firebase JSON missing)"
+          if [ -s app/google-services.json ]; then
+            OAUTH_SHA1_STATUS="$(ACTUAL_SHA1="$SHA1" EXPECTED_PACKAGE="com.aistudio.nexusai.qkzvpx" python3 - <<'PY'
+          import json
+          import os
+
+          actual_sha1 = os.environ.get("ACTUAL_SHA1", "").replace(":", "").strip().upper()
+          expected_package = os.environ["EXPECTED_PACKAGE"]
+
+          try:
+              with open("app/google-services.json", "r", encoding="utf-8") as f:
+                  config = json.load(f)
+          except Exception:
+              print("Firebase JSON could not be read")
+              raise SystemExit(0)
+
+          match = next(
+              (
+                  client for client in (config.get("client") or [])
+                  if ((client.get("client_info") or {}).get("android_client_info") or {}).get("package_name")
+                  == expected_package
+              ),
+              None,
+          )
+
+          android_oauth = (match or {}).get("oauth_client") or []
+          configured_sha1s = {
+              (client.get("android_info") or {}).get("certificate_hash", "").replace(":", "").strip().upper()
+              for client in android_oauth
+              if str(client.get("client_type")) == "1"
+              and (client.get("android_info") or {}).get("package_name") == expected_package
+          }
+          if actual_sha1 and actual_sha1 in configured_sha1s:
+              print("MATCH: Android OAuth certificate matches the APK signing certificate.")
+          else:
+              print("MISMATCH: No Android OAuth certificate matching the APK signing certificate was found in google-services.json.")
+          PY
+          )"
+            echo "$OAUTH_SHA1_STATUS"
+            if [[ "$OAUTH_SHA1_STATUS" == MISMATCH:* ]]; then
+              echo "::warning title=Google Sign-In OAuth certificate mismatch::$OAUTH_SHA1_STATUS Google Sign-In may fail even though the APK build succeeds."
+            fi
+          fi
+
           {
             echo "### APK signing certificate SHA-1"
             echo "`$SHA1`"
             if [ -n "${ANDROID_DEBUG_KEYSTORE_PATH:-}" ]; then
               echo "This fingerprint uses the configured stable CI debug keystore."
             else
-              echo "This fingerprint uses the runner-generated debug key and may change on a later build. Configure the stable signing secrets before relying on Google Sign-In."
+              echo "This fingerprint uses the runner-generated debug key and may change on a later build."
             fi
+            echo
+            echo "### Firebase Android OAuth certificate check"
+            echo "$OAUTH_SHA1_STATUS"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload APK
