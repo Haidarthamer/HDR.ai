@@ -226,7 +226,36 @@ object AuthenticationManager {
                 onCancelled()
             } catch (e: Exception) {
                 Log.e(TAG, "Google Sign-In failed", e)
-                onError(e.localizedMessage ?: "Sign in failed")
+                onError(friendlyGoogleSignInError(e))
+            }
+        }
+    }
+
+    /**
+     * Convert common Firebase / Google OAuth failures into actionable messages.
+     * Keep the underlying error in Logcat for diagnosis, but do not leave the user
+     * with a blank screen after selecting a Google account.
+     */
+    private fun friendlyGoogleSignInError(error: Exception): String {
+        val code = (error as? com.google.firebase.auth.FirebaseAuthException)
+            ?.errorCode.orEmpty()
+        val details = error.localizedMessage.orEmpty()
+        val combined = "$code $details".lowercase()
+
+        return when {
+            "network" in combined ->
+                "Google Sign-In couldn't connect. Check your internet connection and try again."
+            "operation-not-allowed" in combined ->
+                "Google Sign-In is disabled in Firebase. Enable the Google provider under Firebase Authentication."
+            "developer_error" in combined || "error code 10" in combined || "status code 10" in combined ->
+                "Google rejected this app's signing configuration. The installed APK's SHA-1 must match the Android app in Firebase, and the app must be rebuilt with the refreshed google-services.json."
+            "invalid-credential" in combined || "credential is invalid" in combined ->
+                "Firebase rejected the Google credential. Check the Google provider and Web OAuth client in Firebase, then rebuild with a fresh google-services.json."
+            "too-many-requests" in combined ->
+                "Google Sign-In was temporarily blocked after repeated attempts. Wait a little and try again."
+            else -> {
+                val reason = details.ifBlank { error.javaClass.simpleName }
+                "Google Sign-In failed: $reason"
             }
         }
     }
