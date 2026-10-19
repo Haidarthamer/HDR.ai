@@ -9,7 +9,7 @@ The authentication code is in place, but authentication cannot work until this a
 3. Add an **Android app** with this exact, case-sensitive package name: `com.aistudio.nexusai.qkzvpx`.
 4. In the Android app's Firebase settings, add this SHA-1 certificate fingerprint for the stable CI debug key prepared for NexusAI:
 
-   `68:85:20:14:D4:2F:E4:1B:83:AB:FC:55:E5:6A:ED:9E:4E:D0:0C:B3`
+   `7B:72:75:69:11:F5:A8:D1:59:FF:DB:D9:E8:00:1F:E8:6D:4C:02:CD`
 
    The CI workflow supports a stable signing key so that Google Sign-In's certificate fingerprint does not change on each build.
 
