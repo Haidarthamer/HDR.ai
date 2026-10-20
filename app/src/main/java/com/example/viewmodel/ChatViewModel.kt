@@ -351,7 +351,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private var observeMessagesJob: kotlinx.coroutines.Job? = null
     // Keep optimistic messages visible until Firestore confirms each write.
     // A listener can emit an empty/stale snapshot while a newly sent message is saving.
-    private val pendingMessageIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val pendingMessages = java.util.concurrent.ConcurrentHashMap<String, FirestoreMessage>()
 
     fun selectConversation(convId: String) {
         if (_activeConversationId.value != convId) {
@@ -362,13 +362,11 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         observeMessagesJob = viewModelScope.launch {
             repository.observeMessages(convId).collect { msgList ->
                 val remoteIds = msgList.mapTo(HashSet()) { it.id }
-                pendingMessageIds.removeAll(remoteIds)
-                val pendingLocal = _messages.value.filter {
-                    it.conversationId == convId && it.id in pendingMessageIds && it.id !in remoteIds
-                }
+                remoteIds.forEach { pendingMessages.remove(it) }
+                val pendingLocal = pendingMessages.values.filter { it.conversationId == convId }
                 // Merge only pending optimistic sends; do not let an empty/stale
                 // Firestore snapshot erase the message the user just submitted.
-                _messages.value = msgList + pendingLocal
+                _messages.value = msgList + pendingLocal.filterNot { pending -> pending.id in remoteIds }
             }
         }
     }
@@ -448,7 +446,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 role = "user",
                 content = userText
             )
-            pendingMessageIds.add(userMsgId)
+            pendingMessages[userMsgId] = optimisticUserMsg
             _messages.value = _messages.value + optimisticUserMsg
 
             launch {
