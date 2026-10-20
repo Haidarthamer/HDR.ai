@@ -349,6 +349,9 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private var observeMessagesJob: kotlinx.coroutines.Job? = null
+    // Keep optimistic messages visible until Firestore confirms each write.
+    // A listener can emit an empty/stale snapshot while a newly sent message is saving.
+    private val pendingMessageIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     fun selectConversation(convId: String) {
         if (_activeConversationId.value != convId) {
@@ -358,9 +361,14 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         observeMessagesJob?.cancel()
         observeMessagesJob = viewModelScope.launch {
             repository.observeMessages(convId).collect { msgList ->
-                if (msgList.isNotEmpty() || _messages.value.isEmpty()) {
-                    _messages.value = msgList
+                val remoteIds = msgList.mapTo(HashSet()) { it.id }
+                pendingMessageIds.removeAll(remoteIds)
+                val pendingLocal = _messages.value.filter {
+                    it.conversationId == convId && it.id in pendingMessageIds && it.id !in remoteIds
                 }
+                // Merge only pending optimistic sends; do not let an empty/stale
+                // Firestore snapshot erase the message the user just submitted.
+                _messages.value = msgList + pendingLocal
             }
         }
     }
@@ -440,10 +448,16 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 role = "user",
                 content = userText
             )
+            pendingMessageIds.add(userMsgId)
             _messages.value = _messages.value + optimisticUserMsg
 
             launch {
-                repository.saveMessage(convId, userMsgId, "user", userText)
+                try {
+                    repository.saveMessage(convId, userMsgId, "user", userText)
+                } catch (e: Exception) {
+                    // Keep the pending message visible instead of silently losing it.
+                    Log.e("NexusAI_Chat", "Failed to save submitted user message; retaining it locally.", e)
+                }
             }
 
             // Memory candidate extraction (lightweight heuristic, zero extra LLM calls)
