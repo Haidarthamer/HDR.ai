@@ -224,7 +224,10 @@ jobs:
           )"
             echo "$OAUTH_SHA1_STATUS"
             if [[ "$OAUTH_SHA1_STATUS" == MISMATCH:* ]]; then
-              echo "::warning title=Google Sign-In OAuth certificate mismatch::$OAUTH_SHA1_STATUS Google Sign-In may fail even though the APK build succeeds."
+              echo "::error title=Google Sign-In OAuth certificate mismatch::$OAUTH_SHA1_STATUS This APK will not be published as a usable build until GOOGLE_SERVICES_JSON includes the Android OAuth client for the APK signing certificate."
+              echo >> "$GITHUB_STEP_SUMMARY"
+              echo "ERROR: Google Sign-In OAuth certificate mismatch. Update the GOOGLE_SERVICES_JSON Actions secret with the current Firebase Android configuration and rerun the build." >> "$GITHUB_STEP_SUMMARY"
+              exit 1
             fi
           fi
 
